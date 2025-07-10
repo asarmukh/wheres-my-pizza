@@ -1,12 +1,12 @@
 database:
-  host: localhost
+  host: db
   port: 5432
   user: restaurant_user
   password: restaurant_passwd
   database: restaurant_db
 
 rabbitmq:
-  host: localhost
+  host: raabbitmq
   port: 5672
   user: guest
   password: guest

@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    container_name: pizza-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-restaurant_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-restaurant_pass}
+      POSTGRES_DB: ${DB_NAME:-restaurant_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-restaurant_user} -d ${DB_NAME:-restaurant_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # UI
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pizza-app
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+    environment:
+      CONFIG_PATH: /app/configs/config.yaml
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./configs:/app/configs
+    command: ["/app/wheres-my-pizza", "--mode=order-service", "--port=3000"]
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

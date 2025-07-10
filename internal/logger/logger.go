@@ -26,7 +26,7 @@ type LogEntry struct {
 	Hostname  string      `yaml:"hostname"`
 	RequestID string      `yaml:"request_id"`
 	Error     *ErrorEntry `yaml:"error,omitempty"`
-	Details   any         `yaml:"details,omitempty"`
+	Details   interface{} `yaml:"details,omitempty"`
 }
 
 type ErrorEntry struct {
@@ -34,7 +34,7 @@ type ErrorEntry struct {
 	Stack string `yaml:"stack"`
 }
 
-func log(level LogLevel, service, action, message, requestID string, err error, details any) {
+func log(level LogLevel, service, action, message, requestID string, err error, details interface{}) {
 	hostName, _ := os.Hostname()
 
 	entry := LogEntry{
@@ -59,11 +59,11 @@ func log(level LogLevel, service, action, message, requestID string, err error, 
 	fmt.Println(string(bytes))
 }
 
-func Info(service, action, message string, requestID string, details any) {
+func Info(service, action, message string, requestID string, details interface{}) {
 	log(LevelInfo, service, action, message, requestID, nil, details)
 }
 
-func Debug(service, action, message string, requestID string, details any) {
+func Debug(service, action, message string, requestID string, details interface{}) {
 	log(LevelDebug, service, action, message, requestID, nil, details)
 }
 
