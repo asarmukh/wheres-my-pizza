@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 type Order struct {
 	ID              int        `json:"id"`
 	Number          int        `json:"number"`
@@ -14,6 +16,8 @@ type Order struct {
 	CompletedAt     *time.Time `json:"completed_at,omitempry"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
+
+	Items []orderItem `json:"items,omitempty"`
 }
 
 type orderItem struct {

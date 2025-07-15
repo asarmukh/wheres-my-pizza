@@ -3,44 +3,56 @@
 ## Общая структура проекта
 
 ```
-restaurant-system/
+wheres-my-pizza/
 ├── cmd/
-│   └── main.go                 # Точка входа с маршрутизацией по --mode
+│   ├── order-service/
+│   │   └── main.go
+│   ├── kitchen-worker/
+│   │   └── main.go
+│   ├── tracking-service/
+│   │   └── main.go
+│   └── notification-subscriber/
+│       └── main.go
+│
 ├── internal/
 │   ├── config/
-│   │   └── config.go          # Загрузка YAML конфигурации
-│   ├── logger/
-│   │   └── logger.go          # Структурированное логирование
-│   ├── database/
-│   │   ├── connection.go      # Подключение к PostgreSQL
-│   │   ├── migrations.go      # Миграции БД
-│   │   └── models.go          # Модели данных
-│   ├── messaging/
-│   │   ├── rabbitmq.go        # Клиент RabbitMQ
-│   │   ├── exchanges.go       # Настройка exchanges
-│   │   └── queues.go          # Настройка очередей
-│   ├── services/
-│   │   ├── order/
-│   │   │   ├── service.go     # Order Service
-│   │   │   ├── handlers.go    # HTTP handlers
-│   │   │   └── validator.go   # Валидация заказов
-│   │   ├── kitchen/
-│   │   │   ├── worker.go      # Kitchen Worker
-│   │   │   └── processor.go   # Обработка заказов
-│   │   ├── tracking/
-│   │   │   ├── service.go     # Tracking Service
-│   │   │   └── handlers.go    # HTTP handlers
-│   │   └── notification/
-│   │       └── subscriber.go  # Notification Service
-│   └── shared/
-│       ├── types.go           # Общие типы и структуры
-│       └── utils.go           # Утилиты
-├── configs/
-│   └── config.yaml            # Конфигурационный файл
-├── migrations/
-│   ├── 001_create_orders.sql
-│   ├── 002_create_workers.sql
-│   └── 003_create_indexes.sql
+│   │   ├── config.go         # Config loader (from YAML)
+│   │   └── config.yaml       # Configuration file
+│   │
+│   ├── adapters/
+│   │   ├── http/
+│   │   │   └── handlers/
+│   │   │       └── order_handler.go   # HTTP handlers for OrderService
+│   │   ├── messaging/
+│   │   │   └── rabbitmq/
+│   │   │       └── consumer.go        # RabbitMQ subscribers (e.g. kitchen, notification)
+│   │   └── storage/
+│   │       └── postgres/
+│   │           └── order_repo.go      # Postgres implementation of OrderRepository
+│   │
+│   ├── core/
+│   │   ├── domain/
+│   │   │   ├── order.go               # Order, OrderItem
+│   │   │   ├── order_status_log.go    # Status history
+│   │   │   └── worker.go              # Worker model
+│   │   │
+│   │   ├── ports/
+│   │   │   └── order_repository.go    # OrderRepository interface
+│   │   │
+│   │   └── services/
+│   │       ├── order_service.go       # Order service use cases
+│   │       ├── kitchen_processor.go   # Kitchen business logic
+│   │       ├── tracking_service.go    # Tracking logic
+│   │       └── notification_service.go# Notification logic
+│   │
+│   └── database/
+│       └── connection.go              # pgxpool connection utility
+│
+├── database/
+│   └── init.sql                       # SQL schema (orders, status logs, workers, etc.)
+│
+├── docker-compose.yml
+├── Dockerfile
 ├── go.mod
 ├── go.sum
 └── README.md
