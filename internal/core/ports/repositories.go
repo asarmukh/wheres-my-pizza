@@ -6,7 +6,7 @@ import (
 )
 
 type OrderRepo interface {
-	Create(ctx context.Context, order *domain.Order) error
+	Save(ctx context.Context, order *domain.Order) error
 	GetByID(ctx context.Context, id int) (*domain.Order, error)
 	ListByStatus(ctx context.Context, status string) ([]*domain.Order, error)
 	UpdateStatus(ctx context.Context, id int, newStaus string) error

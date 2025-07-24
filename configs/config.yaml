@@ -2,11 +2,11 @@ database:
   host: db
   port: 5432
   user: restaurant_user
-  password: restaurant_passwd
+  password: restaurant_pass
   database: restaurant_db
 
 rabbitmq:
-  host: raabbitmq
+  host: rabbitmq
   port: 5672
   user: guest
   password: guest

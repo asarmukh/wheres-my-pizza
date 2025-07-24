@@ -1,4 +1,4 @@
-create table order (
+create table orders (
     id                serial        primary key,
     created_at        timestamptz   not null    default now(),
     updated_at        timestamptz   not null    default now(),

@@ -5,8 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"wheres-my-pizza/internal/adapters/http/handlers"
+	"wheres-my-pizza/internal/adapters/storage/postgres"
 	"wheres-my-pizza/internal/config"
+	"wheres-my-pizza/internal/core/services"
 	"wheres-my-pizza/internal/database"
 	"wheres-my-pizza/internal/logger"
 )
@@ -59,7 +63,27 @@ func main() {
 }
 
 func runOrderService(ctx context.Context, cfg *config.Config, db database.Pool, port int) {
-	// TODO
+	repo := postgres.NewOrderRepo(db)
+	service := services.NewOrderService(repo)
+	handler := handlers.NewOrderHandler(service)
+
+	mux := http.NewServeMux()
+	config.RegisterRoutes(mux, handler)
+
+	addr := fmt.Sprintf(":%d", port)
+	logger.Info("order-service", "startup", "Starting HTTP server", "reqID", map[string]interface{}{
+		"address": addr,
+	})
+
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Error("order-service", "http_server", "ListenAndServe failed", "reqID", err)
+		os.Exit(1)
+	}
 }
 
 func runKitchenWorker(ctx context.Context, cfg *config.Config, db database.Pool) {
