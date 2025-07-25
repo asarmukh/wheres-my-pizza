@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"time"
 	"wheres-my-pizza/internal/core/domain"
 	"wheres-my-pizza/internal/core/ports"
 	"wheres-my-pizza/internal/helper"
@@ -23,6 +24,18 @@ func (s *OrderService) CreateOrder(ctx context.Context, order *domain.Order) err
 	if err := helper.ValidateOrder(order); err != nil {
 		return err
 	}
+
+	totalAmount := 0.0
+
+	for _, item := range order.Items {
+		totalAmount += float64(item.Quantity) + item.Price
+	}
+
+	order.TotalAmount = totalAmount
+	order.Priority = SetPriority(totalAmount)
+
+	order.CreatedAt = time.Now().UTC()
+	order.UpdatedAt = order.CreatedAt
 
 	return s.repo.Save(ctx, order)
 }

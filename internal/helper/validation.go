@@ -12,8 +12,8 @@ func ValidateOrder(order *domain.Order) error {
 		return errors.New("customer name is required")
 	}
 
-	if order.Type != "dine-in" && order.Type != "delivery" {
-		return errors.New("order type must be either 'dine-in' or 'delivery'")
+	if order.Type != "dine-in" && order.Type != "delivery" && order.Type != "takeout" {
+		return errors.New("order type must be either 'dine-in', 'delivery' or `takeout`")
 	}
 
 	if order.Type == "dine-in" && order.TableNumber == nil {
@@ -36,7 +36,6 @@ func ValidateOrder(order *domain.Order) error {
 		return errors.New("order must containt at leat one item")
 	}
 
-	calculatedTotal := 0.0
 	for i, item := range order.Items {
 		if strings.TrimSpace(item.Name) == "" {
 			return fmt.Errorf("item %d name is required", i+1)
@@ -47,11 +46,6 @@ func ValidateOrder(order *domain.Order) error {
 		if item.Price < 0 {
 			return fmt.Errorf("item %d price cannot be negative", i+1)
 		}
-		calculatedTotal += float64(item.Quantity) * item.Price
-	}
-
-	if order.TotalAmount != calculatedTotal {
-		return fmt.Errorf("total amount mismatch: expected %.2f but got %.2f", calculatedTotal, order.TotalAmount)
 	}
 
 	return nil

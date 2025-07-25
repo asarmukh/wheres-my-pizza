@@ -4,7 +4,7 @@ create table orders (
     updated_at        timestamptz   not null    default now(),
     number            text          unique not null,
     customer_name     text          not null,
-    type              text          not null check (type in ('dine_in', 'takeout', 'delivery')),
+    type              text          not null check (type in ('dine-in', 'takeout', 'delivery')),
     table_number      integer,
     delivery_address  text,
     total_amount      decimal(10,2) not null,
