@@ -42,3 +42,8 @@ create table workers (
     last_seen         timestamptz default current_timestamp,
     orders_processed  integer     default 0
 );
+
+create table order_sequence (
+    sequence_date date primary key,
+    counter int not null
+);

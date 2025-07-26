@@ -6,6 +6,7 @@ import (
 	"time"
 	"wheres-my-pizza/internal/core/domain"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -136,4 +137,27 @@ func (r *OrderRepo) UpdateStatus(ctx context.Context, id int, newStaus string) e
 
 func (r *OrderRepo) LogStatusChange(ctx context.Context, log *domain.OrderStatusLog) error {
 	return nil
+}
+
+func (r *OrderRepo) GetAndIncrementOrderCounter(ctx context.Context, date time.Time) (int, error) {
+	var counter int
+
+	err := r.db.QueryRow(ctx,
+		`UPDATE order_sequence
+	SET counter = counter + 1
+	WHERE sequence_date = $1
+	RETURNING counter`, date).Scan(&counter)
+
+	if err == pgx.ErrNoRows {
+		err = r.db.QueryRow(ctx,
+			`INSERT INTO order_sequence (sequence_date, counter) 
+			VALUES ($1, 1)
+		RETURNING counter`, date).Scan(&counter)
+	}
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to get or insert order counter: %w", err)
+	}
+
+	return counter, nil
 }

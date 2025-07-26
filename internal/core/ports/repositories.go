@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"time"
 	"wheres-my-pizza/internal/core/domain"
 )
 
@@ -11,4 +12,5 @@ type OrderRepo interface {
 	ListByStatus(ctx context.Context, status string) ([]*domain.Order, error)
 	UpdateStatus(ctx context.Context, id int, newStaus string) error
 	LogStatusChange(ctx context.Context, log *domain.OrderStatusLog) error
+	GetAndIncrementOrderCounter(ctx context.Context, date time.Time) (int, error)
 }

@@ -1,0 +1,22 @@
+//order creation body request example 
+
+{  
+  "customer_name": "John Doe",
+  "type": "dine-in",
+  "table_number": 5,      
+  "items": [
+    {
+      "name": "Pizza Margherita",
+      "quantity": 1,
+      "price": 9.99
+    },
+    {
+      "name": "Cola",
+      "quantity": 2,
+      "price": 4.99
+    }
+  ]
+}
+
+//enter psql console 
+docker exec -it pizza-postgres psql -U restaurant_user -d restaurant_db
