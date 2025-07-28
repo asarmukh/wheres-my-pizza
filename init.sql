@@ -1,49 +1,63 @@
-create table orders (
-    id                serial        primary key,
-    created_at        timestamptz   not null    default now(),
-    updated_at        timestamptz   not null    default now(),
-    number            text          unique not null,
-    customer_name     text          not null,
-    type              text          not null check (type in ('dine-in', 'takeout', 'delivery')),
-    table_number      integer,
+CREATE TABLE orders (
+    id                serial        PRIMARY KEY,
+    created_at        timestamptz   NOT NULL DEFAULT now(),
+    updated_at        timestamptz   NOT NULL DEFAULT now(),
+    number            text          UNIQUE NOT NULL,
+    customer_name     text          NOT NULL CHECK (char_length(customer_name) BETWEEN 1 AND 100),
+    type              text          NOT NULL CHECK (type IN ('dine-in', 'takeout', 'delivery')),
+    table_number      integer       CHECK (char_length(table_number) BETWEEN 1 AND 100),
     delivery_address  text,
-    total_amount      decimal(10,2) not null,
-    priority          integer       default 1,
-    status            text          default 'received',
+    total_amount      decimal(10,2) NOT NULL,
+    priority          integer       DEFAULT 1,
+    status            text          NOT NULL DEFAULT 'received',
     processed_by      text,
     completed_at      timestamptz
 );
 
-create table order_items (
-    id          serial        primary key,
-    created_at  timestamptz   not null    default now(),
-    order_id    integer       references orders(id),
-    name        text          not null,
-    quantity    integer       not null,
-    price       decimal(8,2)  not null
+CREATE TABLE order_items (
+    id          serial        PRIMARY KEY,
+    created_at  timestamptz   NOT NULL DEFAULT now(),
+    order_id    integer       REFERENCES orders(id) ON DELETE CASCADE,
+    name        text          NOT NULL CHECK (char_length(name) BETWEEN 1 AND 50),
+    quantity    integer       NOT NULL CHECK (quantity BETWEEN 1 AND 10),
+    price       decimal(8,2)  NOT NULL CHECK (price BETWEEN 0.01 AND 999.99)
 );
 
-create table order_status_log (
-    id          serial        primary key,
-    created_at  timestamptz   not null    default now(),
-    order_id    integer       references orders(id),
-    status      text,
+CREATE TABLE order_status_log (
+    id          serial        PRIMARY KEY,
+    created_at  timestamptz   NOT NULL DEFAULT now(),
+    order_id    integer       NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    status      text          NOT NULL CHECK (status IN ('received', 'cooking', 'ready', 'completed', 'cancelled')),
     changed_by  text,
-    changed_at  timestamptz   default current_timestamp,
+    changed_at  timestamptz   DEFAULT current_timestamp,
     notes       text
 );
 
-create table workers (
-    id                serial      primary key,
-    created_at        timestamptz not null    default now(),
-    name              text        unique not null,
-    type              text        not null,
-    status            text        default 'online',
-    last_seen         timestamptz default current_timestamp,
-    orders_processed  integer     default 0
+CREATE TABLE workers (
+    id                serial        PRIMARY KEY,
+    created_at        timestamptz   NOT NULL DEFAULT now(),
+    name              text          UNIQUE NOT NULL,
+    type              text          NOT NULL,
+    status            text          DEFAULT 'online',
+    last_seen         timestamptz   DEFAULT current_timestamp,
+    orders_processed  integer       DEFAULT 0
 );
 
-create table order_sequence (
-    sequence_date date primary key,
-    counter int not null
+CREATE TABLE order_sequence (
+    sequence_date date PRIMARY KEY,
+    counter       integer NOT NULL
 );
+
+CREATE OR REPLACE FUNCTION log_init_order_status()
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO order_status_log(order_id, status)
+  VALUES (NEW.id, 'received');
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_log_init_status
+AFTER INSERT ON orders
+FOR EACH ROW
+EXECUTE FUNCTION log_init_order_status();

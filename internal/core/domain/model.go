@@ -20,6 +20,12 @@ type Order struct {
 	Items []OrderItem `json:"items"`
 }
 
+type OrderResponse struct {
+	OrderNumber string  `json:"order_number"`
+	Status      string  `json:"status"`
+	TotalAmount float64 `json:"total_amount"`
+}
+
 type OrderItem struct {
 	ID        int       `json:"id"`
 	OrderID   int       `json:"order_id"`

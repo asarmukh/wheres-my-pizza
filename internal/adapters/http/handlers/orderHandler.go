@@ -2,10 +2,13 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"wheres-my-pizza/internal/core/domain"
 	"wheres-my-pizza/internal/core/ports"
+	"wheres-my-pizza/internal/helper"
 )
 
 type OrderHandler struct {
@@ -36,15 +39,37 @@ func (h *OrderHandler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 
 func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	var order domain.Order
-	if err := json.NewDecoder(r.Body).Decode(&order); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&order); err != nil {
+		var syntaxErr *json.SyntaxError
+		var unmarshalTypeErr *json.UnmarshalTypeError
+
+		switch {
+		case errors.As(err, &syntaxErr):
+			helper.ResponswWithError(w, http.StatusBadRequest, fmt.Sprintf("Request body contains badly-formed JSON at position %d", syntaxErr.Offset))
+		case errors.As(err, &unmarshalTypeErr):
+			field := unmarshalTypeErr.Field
+			helper.ResponswWithError(w, http.StatusBadRequest, fmt.Sprintf("Field '%s' expects value of type %s", field, unmarshalTypeErr.Type.String()))
+		default:
+			helper.ResponswWithError(w, http.StatusBadRequest, "Invalid request")
+		}
 		return
 	}
 
 	if err := h.service.CreateOrder(r.Context(), &order); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		helper.ResponswWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
+	fmt.Println("status", order.Status)
+
+	resp := domain.OrderResponse{
+		OrderNumber: order.Number,
+		Status:      order.Status,
+		TotalAmount: order.TotalAmount,
+	}
+
+	helper.ResponseInJSON(w, http.StatusOK, resp)
 }

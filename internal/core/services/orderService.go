@@ -41,6 +41,7 @@ func (s *OrderService) CreateOrder(ctx context.Context, order *domain.Order) err
 		return fmt.Errorf("failed to generate order number: %w", err)
 	}
 
+	order.Status = "received"
 	order.CreatedAt = time.Now().UTC()
 	order.UpdatedAt = order.CreatedAt
 

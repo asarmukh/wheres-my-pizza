@@ -25,8 +25,8 @@ func (r *OrderRepo) Save(ctx context.Context, order *domain.Order) error {
 	}
 	defer tx.Rollback(ctx)
 
-	query := `INSERT INTO orders (number, customer_name, type, table_number, delivery_address, total_amount, priority, status, processed_by, completed_at, created_at, updated_at) VALUES
-	($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+	query := `INSERT INTO orders (number, customer_name, type, table_number, delivery_address, total_amount, priority, processed_by, completed_at, created_at, updated_at) VALUES
+	($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	RETURNING id`
 
 	var orderID int
@@ -38,7 +38,6 @@ func (r *OrderRepo) Save(ctx context.Context, order *domain.Order) error {
 		order.DeliveryAddress,
 		order.TotalAmount,
 		order.Priority,
-		order.Status,
 		order.ProcessedBy,
 		order.CompletedAt,
 		order.CreatedAt,
