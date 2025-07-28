@@ -7,5 +7,5 @@ import (
 
 type OrderService interface {
 	CreateOrder(ctx context.Context, order *domain.Order) error
-	GetOrderByID(ctx context.Context, id int) (*domain.Order, error)
+	GetOrderByNumber(ctx context.Context, orderNumber string) (*domain.Order, error)
 }

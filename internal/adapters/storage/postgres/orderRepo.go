@@ -69,11 +69,11 @@ func (r *OrderRepo) Save(ctx context.Context, order *domain.Order) error {
 	return nil
 }
 
-func (r *OrderRepo) GetByID(ctx context.Context, id int) (*domain.Order, error) {
+func (r *OrderRepo) GetByNumber(ctx context.Context, orderNumber string) (*domain.Order, error) {
 	row := r.db.QueryRow(ctx,
 		`SELECT id, number, customer_name, type, table_number, delivery_address, total_amount, priority, status, processed_by, completed_at, created_at, updated_at
 		 FROM orders
-		 WHERE id = $1`, id)
+		 WHERE number = $1`, orderNumber)
 
 	var order domain.Order
 	err := row.Scan(

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
+	"strings"
 	"wheres-my-pizza/internal/core/domain"
 	"wheres-my-pizza/internal/core/ports"
 	"wheres-my-pizza/internal/helper"
@@ -19,15 +19,12 @@ func NewOrderHandler(service ports.OrderService) *OrderHandler {
 	return &OrderHandler{service: service}
 }
 
-func (h *OrderHandler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		http.Error(w, "invalid order ID", http.StatusBadRequest)
-		return
-	}
+func (h *OrderHandler) GetOrderByNumber(w http.ResponseWriter, r *http.Request) {
+	orderNumber := strings.TrimSpace(r.PathValue("number"))
 
-	order, err := h.service.GetOrderByID(r.Context(), id)
+	fmt.Println("Searching for order number:", orderNumber)
+
+	order, err := h.service.GetOrderByNumber(r.Context(), orderNumber)
 	if err != nil {
 		http.Error(w, "order not found", http.StatusNotFound)
 		return
@@ -43,12 +40,9 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&order); err != nil {
-		var syntaxErr *json.SyntaxError
 		var unmarshalTypeErr *json.UnmarshalTypeError
 
 		switch {
-		case errors.As(err, &syntaxErr):
-			helper.ResponswWithError(w, http.StatusBadRequest, fmt.Sprintf("Request body contains badly-formed JSON at position %d", syntaxErr.Offset))
 		case errors.As(err, &unmarshalTypeErr):
 			field := unmarshalTypeErr.Field
 			helper.ResponswWithError(w, http.StatusBadRequest, fmt.Sprintf("Field '%s' expects value of type %s", field, unmarshalTypeErr.Type.String()))

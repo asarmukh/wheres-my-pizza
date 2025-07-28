@@ -17,8 +17,8 @@ func NewOrderService(repo ports.OrderRepo) *OrderService {
 	return &OrderService{repo: repo}
 }
 
-func (s *OrderService) GetOrderByID(ctx context.Context, id int) (*domain.Order, error) {
-	return s.repo.GetByID(ctx, id)
+func (s *OrderService) GetOrderByNumber(ctx context.Context, orderNumber string) (*domain.Order, error) {
+	return s.repo.GetByNumber(ctx, orderNumber)
 }
 
 func (s *OrderService) CreateOrder(ctx context.Context, order *domain.Order) error {

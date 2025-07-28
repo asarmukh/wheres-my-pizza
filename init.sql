@@ -5,7 +5,7 @@ CREATE TABLE orders (
     number            text          UNIQUE NOT NULL,
     customer_name     text          NOT NULL CHECK (char_length(customer_name) BETWEEN 1 AND 100),
     type              text          NOT NULL CHECK (type IN ('dine-in', 'takeout', 'delivery')),
-    table_number      integer       CHECK (char_length(table_number) BETWEEN 1 AND 100),
+    table_number      integer       CHECK (table_number BETWEEN 1 AND 100),
     delivery_address  text,
     total_amount      decimal(10,2) NOT NULL,
     priority          integer       DEFAULT 1,
