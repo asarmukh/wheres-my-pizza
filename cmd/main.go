@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 	"wheres-my-pizza/internal/adapters/http/handlers"
 	"wheres-my-pizza/internal/adapters/storage/postgres"
 	"wheres-my-pizza/internal/config"
@@ -37,6 +38,7 @@ func main() {
 	reqID := logger.NewRequestID()
 	ctx := context.Background()
 
+	dbStart := time.Now()
 	db, err := database.Connect(cfg.Database)
 	if err != nil {
 		logger.Error(*mode, "db_connect", "cannot connect to DB", reqID, err)
@@ -44,13 +46,16 @@ func main() {
 	}
 	defer db.Close()
 
-	logger.Info(*mode, "startup", fmt.Sprintf("Service running in mode: %s", *mode), reqID, map[string]interface{}{
-		"port": *port,
-	})
+	logger.Info("order-service", "db_connected", "Connected to PostgreSQL database", reqID, nil, time.Since(dbStart).Milliseconds())
+
+	logger.Info("order-service", "service_started", "Order Service started", reqID, map[string]interface{}{
+		"port":           *port,
+		"max_concurrent": 50,
+	}, 0)
 
 	switch *mode {
 	case "order-service":
-		runOrderService(ctx, cfg, db, *port)
+		runOrderService(ctx, cfg, db, *port, reqID)
 	case "kitchen-worker":
 		runKitchenWorker(ctx, cfg, db)
 	case "tracking-service":
@@ -62,7 +67,7 @@ func main() {
 	}
 }
 
-func runOrderService(ctx context.Context, cfg *config.Config, db database.Pool, port int) {
+func runOrderService(ctx context.Context, cfg *config.Config, db database.Pool, port int, reqID string) {
 	repo := postgres.NewOrderRepo(db)
 	service := services.NewOrderService(repo)
 	handler := handlers.NewOrderHandler(service)
@@ -71,9 +76,9 @@ func runOrderService(ctx context.Context, cfg *config.Config, db database.Pool, 
 	config.RegisterRoutes(mux, handler)
 
 	addr := fmt.Sprintf(":%d", port)
-	logger.Info("order-service", "startup", "Starting HTTP server", "reqID", map[string]interface{}{
+	logger.Info("order-service", "http_server_started", "Starting HTTP server", reqID, map[string]interface{}{
 		"address": addr,
-	})
+	}, 0)
 
 	srv := &http.Server{
 		Addr:    addr,
@@ -81,7 +86,7 @@ func runOrderService(ctx context.Context, cfg *config.Config, db database.Pool, 
 	}
 
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		logger.Error("order-service", "http_server", "ListenAndServe failed", "reqID", err)
+		logger.Error("order-service", "http_server_failed", "ListenAndServe failed", reqID, err)
 		os.Exit(1)
 	}
 }
