@@ -10,11 +10,15 @@ import (
 )
 
 type OrderService struct {
-	repo ports.OrderRepo
+	repo      ports.OrderRepo
+	publisher ports.OrderPublisher
 }
 
-func NewOrderService(repo ports.OrderRepo) *OrderService {
-	return &OrderService{repo: repo}
+func NewOrderService(repo ports.OrderRepo, publisher ports.OrderPublisher) *OrderService {
+	return &OrderService{
+		repo:      repo,
+		publisher: publisher,
+	}
 }
 
 func (s *OrderService) GetOrderByNumber(ctx context.Context, orderNumber string) (*domain.Order, error) {
@@ -45,7 +49,26 @@ func (s *OrderService) CreateOrder(ctx context.Context, order *domain.Order) err
 	order.CreatedAt = time.Now().UTC()
 	order.UpdatedAt = order.CreatedAt
 
-	return s.repo.Save(ctx, order)
+	if err := s.repo.Save(ctx, order); err != nil {
+		// logger.Error("order-service", "db_transaction_failed", "failed to save order", nil, err)
+		return err
+	}
+
+	// logger.Debug("order-service", "order_received", "Order saved successfully", nil, map[string]interface{}{
+	// 	"order_number": order.Number,
+	// 	"priority":     order.Priority,
+	// })
+
+	if err := s.publisher.PublishOrder(ctx, order); err != nil {
+		// logger.Error("order-service", "rabbitmq_publish_failed", "Failed to publish order", nil, err)
+		return err
+	}
+
+	// logger.Debug("order-service", "order_published", "Order published to RabbitMQ", nil, map[string]interface{}{
+	// 	"order_number": order.Number,
+	// })
+
+	return nil
 }
 
 func (s *OrderService) generateOrderNumber(ctx context.Context) (string, error) {
