@@ -1,78 +1,99 @@
 package logger
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"time"
-
-	"github.com/google/uuid"
 )
 
-type LogLevel string
+type M map[string]any
 
-const (
-	LevelInfo  LogLevel = "INFO"
-	LevelDebug LogLevel = "DEBUG"
-	LevelError LogLevel = "ERROR"
-)
-
-type LogEntry struct {
-	Timestamp  string      `yaml:"timestamp"`
-	Level      LogLevel    `yaml:"level"`
-	Service    string      `yaml:"service"`
-	Action     string      `yaml:"action"`
-	Message    string      `yaml:"message"`
-	Hostname   string      `yaml:"hostname"`
-	RequestID  string      `yaml:"request_id"`
-	DurationMs int64       `json:"duration_ms,omitempty"`
-	Error      *ErrorEntry `yaml:"error,omitempty"`
-	Details    interface{} `yaml:"details,omitempty"`
+type Logger struct {
+	service  string
+	hostname string
 }
 
-type ErrorEntry struct {
-	Msg   string `yaml:"msg"`
-	Stack string `yaml:"stack"`
+func New(service, hostname string) *Logger {
+	return &Logger{service: service, hostname: hostname}
 }
 
-func log(level LogLevel, service, action, message, requestID string, err error, details interface{}, durationMs int64) {
-	hostName, _ := os.Hostname()
+type logEntry struct {
+	Timestamp string `json:"timestamp"`
+	Level     string `json:"level"`
+	Service   string `json:"service"`
+	Hostname  string `json:"hostname"`
+	RequestID string `json:"request_id"`
+	Action    string `json:"action"`
+	Message   string `json:"message"`
+	Details   any    `json:"details,omitempty"`
+	Error     *struct {
+		Msg   string `json:"msg"`
+		Stack string `json:"stack"`
+	} `json:"error,omitempty"`
+}
 
-	entry := LogEntry{
-		Timestamp:  time.Now().UTC().Format(time.RFC3339),
-		Level:      level,
-		Service:    service,
-		Action:     action,
-		Message:    message,
-		Hostname:   hostName,
-		RequestID:  requestID,
-		Details:    details,
-		DurationMs: durationMs,
+type ctxKey string
+
+const requestIDKey ctxKey = "request_id"
+
+func WithRequestID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, requestIDKey, id)
+}
+
+func RequestIDFromContext(ctx context.Context) string {
+	v := ctx.Value(requestIDKey)
+	if s, ok := v.(string); ok {
+		return s
 	}
-
-	if err != nil {
-		entry.Error = &ErrorEntry{
-			Msg:   err.Error(),
-			Stack: fmt.Sprintf("%+v", err),
-		}
-	}
-
-	bytes, _ := json.Marshal(entry)
-	fmt.Println(string(bytes))
+	return ""
 }
 
-func Info(service, action, message string, requestID string, details interface{}, durationMs int64) {
-	log(LevelInfo, service, action, message, requestID, nil, details, durationMs)
+func (l *Logger) write(le logEntry) {
+	b, _ := json.Marshal(le)
+	fmt.Fprintln(os.Stdout, string(b))
 }
 
-func Debug(service, action, message string, requestID string, details interface{}, durationMs int64) {
-	log(LevelDebug, service, action, message, requestID, nil, details, durationMs)
+func (l *Logger) Info(ctx context.Context, action, message string, details any) {
+	l.write(logEntry{
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Level:     "INFO",
+		Service:   l.service,
+		Hostname:  l.hostname,
+		RequestID: RequestIDFromContext(ctx),
+		Action:    action,
+		Message:   message,
+		Details:   details,
+	})
 }
 
-func Error(service, action, message string, requestID string, err error) {
-	log(LevelError, service, action, message, requestID, err, nil, 0)
+func (l *Logger) Debug(ctx context.Context, action, message string, details any) {
+	l.write(logEntry{
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Level:     "DEBUG",
+		Service:   l.service,
+		Hostname:  l.hostname,
+		RequestID: RequestIDFromContext(ctx),
+		Action:    action,
+		Message:   message,
+		Details:   details,
+	})
 }
 
-func NewRequestID() string {
-	return uuid.New().String()
+func (l *Logger) Error(ctx context.Context, action, message string, err error) {
+	l.write(logEntry{
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Level:     "ERROR",
+		Service:   l.service,
+		Hostname:  l.hostname,
+		RequestID: RequestIDFromContext(ctx),
+		Action:    action,
+		Message:   message,
+		Error: &struct {
+			Msg   string `json:"msg"`
+			Stack string `json:"stack"`
+		}{Msg: err.Error(), Stack: string(debug.Stack())},
+	})
 }
