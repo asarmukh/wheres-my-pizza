@@ -31,6 +31,8 @@ import (
 
 	notimq "wheres-my-pizza/internal/notification/adapter/mq"
 	notiapp "wheres-my-pizza/internal/notification/app"
+
+	demo "wheres-my-pizza/internal/demo"
 )
 
 func main() {
@@ -67,6 +69,49 @@ func main() {
 
 	// Initialize per-mode resources and start service
 	switch *mode {
+	case "demo-ui":
+		if *port == 0 {
+			*port = 3005
+		}
+		pool, err = db.Connect(ctx, cfg.Database)
+		if err != nil {
+			log.Error(ctx, "db_connection_failed", "Failed to connect to database", err)
+			os.Exit(1)
+		}
+		if err := db.RunMigrations(ctx, pool); err != nil {
+			log.Error(ctx, "db_migration_failed", "Failed to run migrations", err)
+			os.Exit(1)
+		}
+		amqp = rabbitmq.NewClient(cfg.RabbitMQ, log)
+		if err := amqp.ConnectWithRetry(ctx); err != nil {
+			log.Error(ctx, "rabbitmq_connection_failed", "Failed to connect to RabbitMQ", err)
+			os.Exit(1)
+		}
+		if err := amqp.EnsureOrderTopology(ctx); err != nil {
+			log.Error(ctx, "rabbitmq_declare_failed", "Failed to declare order topology", err)
+			os.Exit(1)
+		}
+		if err := amqp.EnsureNotificationTopology(ctx); err != nil {
+			log.Error(ctx, "rabbitmq_declare_failed", "Failed to declare notification topology", err)
+			os.Exit(1)
+		}
+		h, err := demo.New(ctx, log, pool, amqp, *maxConcurrent)
+		if err != nil {
+			log.Error(ctx, "demo_failed", "Failed to init demo ui", err)
+			os.Exit(1)
+		}
+		httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", *port), Handler: h}
+		go func() {
+			log.Info(ctx, "service_started", fmt.Sprintf("Demo UI started on port %d", *port), logger.M{"port": *port})
+			if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error(ctx, "http_server_failed", "HTTP server error", err)
+				stop()
+			}
+		}()
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = httpSrv.Shutdown(shutdownCtx)
 	case "order-service":
 		if *port == 0 {
 			*port = 3000

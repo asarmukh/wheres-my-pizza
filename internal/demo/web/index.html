@@ -1,0 +1,216 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Where's My Pizza - Demo UI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3"></script>
+</head>
+<body class="bg-gray-50">
+  <div id="app" class="max-w-6xl mx-auto p-4">
+    <div class="flex items-center justify-between mb-4">
+      <h1 class="text-2xl font-bold">Where's My Pizza</h1>
+      <div class="text-sm text-gray-500">Demo UI</div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="bg-white rounded-lg shadow p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold">Create Order</h2>
+          <button @click="resetForm" class="text-xs text-gray-500 hover:underline">Reset</button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm text-gray-600">Customer Name</label>
+            <input v-model="form.customer_name" class="mt-1 w-full border rounded px-3 py-2"/>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-600">Order Type</label>
+            <select v-model="form.order_type" class="mt-1 w-full border rounded px-3 py-2">
+              <option value="takeout">takeout</option>
+              <option value="dine_in">dine_in</option>
+              <option value="delivery">delivery</option>
+            </select>
+          </div>
+          <div v-if="form.order_type==='dine_in'">
+            <label class="block text-sm text-gray-600">Table Number</label>
+            <input type="number" v-model.number="form.table_number" class="mt-1 w-full border rounded px-3 py-2"/>
+          </div>
+          <div v-if="form.order_type==='delivery'">
+            <label class="block text-sm text-gray-600">Delivery Address</label>
+            <input v-model="form.delivery_address" class="mt-1 w-full border rounded px-3 py-2"/>
+          </div>
+        </div>
+        <div class="mt-3">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="font-medium">Items</h3>
+            <button @click="addItem" class="text-sm text-blue-600 hover:underline">Add item</button>
+          </div>
+          <div v-for="(it,idx) in form.items" :key="idx" class="grid grid-cols-8 gap-2 mb-2">
+            <input class="col-span-4 border rounded px-3 py-2" placeholder="Name" v-model="it.name"/>
+            <input class="col-span-2 border rounded px-3 py-2" type="number" min="1" max="10" placeholder="Qty" v-model.number="it.quantity"/>
+            <input class="col-span-2 border rounded px-3 py-2" type="number" min="0.01" step="0.01" placeholder="Price" v-model.number="it.price"/>
+            <div class="col-span-8 flex justify-end">
+              <button @click="removeItem(idx)" class="text-xs text-red-600 hover:underline">Remove</button>
+            </div>
+          </div>
+        </div>
+        <div class="mt-4 flex items-center gap-3">
+          <button @click="createOrder" :disabled="busy" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50">Create</button>
+          <div class="text-sm text-gray-500">Last Order: <code class="text-gray-700">{{ lastOrder || '-' }}</code></div>
+        </div>
+        <div v-if="error" class="mt-2 text-sm text-red-600">{{ error }}</div>
+      </div>
+
+      <div class="bg-white rounded-lg shadow p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold">Track Orders</h2>
+          <button @click="trackLast" class="text-sm text-blue-600 hover:underline" :disabled="!lastOrder">Track last</button>
+        </div>
+        <div class="mb-3 flex gap-2">
+          <input v-model="queryOrder" placeholder="ORD_YYYYMMDD_001" class="flex-1 border rounded px-3 py-2"/>
+          <button @click="fetchStatus(queryOrder)" class="px-3 py-2 border rounded">Status</button>
+          <button @click="fetchHistory(queryOrder)" class="px-3 py-2 border rounded">History</button>
+          <button @click="addTracked(queryOrder)" class="px-3 py-2 border rounded">Track</button>
+        </div>
+        <div class="space-y-2 max-h-64 overflow-auto">
+          <div v-for="o in trackedList" :key="o.order_number" class="flex items-center justify-between border rounded px-3 py-2">
+            <div>
+              <div class="font-mono text-sm">{{ o.order_number }}</div>
+              <div class="text-xs text-gray-500">updated {{ formatDate(o.updated_at) }}</div>
+            </div>
+            <span :class="['text-xs px-2 py-1 rounded', statusClass(o.current_status)]">{{ o.current_status }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-lg shadow p-4">
+        <h2 class="font-semibold mb-3">Order Details</h2>
+        <div v-if="currentStatus" class="mb-3">
+          <div class="font-mono">{{ currentStatus.order_number }}</div>
+          <div class="text-sm">Status: <b>{{ currentStatus.current_status }}</b>, by {{ currentStatus.processed_by || '—' }}</div>
+        </div>
+        <div>
+          <h3 class="font-medium mb-1">History</h3>
+          <div class="max-h-48 overflow-auto border rounded">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50"><tr><th class="text-left px-2 py-1">Status</th><th class="text-left px-2 py-1">Changed By</th><th class="text-left px-2 py-1">Time</th></tr></thead>
+              <tbody>
+                <tr v-for="(h, i) in currentHistory" :key="i" class="border-t">
+                  <td class="px-2 py-1">{{ h.status }}</td>
+                  <td class="px-2 py-1">{{ h.changed_by }}</td>
+                  <td class="px-2 py-1">{{ h.timestamp }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-lg shadow p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold">Workers</h2>
+          <button @click="refreshWorkers" class="text-sm px-3 py-1 border rounded">Refresh</button>
+        </div>
+        <div class="max-h-64 overflow-auto border rounded">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50"><tr><th class="text-left px-2 py-1">Name</th><th class="text-left px-2 py-1">Status</th><th class="text-left px-2 py-1">Processed</th><th class="text-left px-2 py-1">Last Seen</th></tr></thead>
+            <tbody>
+              <tr v-for="w in workers" :key="w.worker_name" class="border-t">
+                <td class="px-2 py-1">{{ w.worker_name }}</td>
+                <td class="px-2 py-1"><span :class="['text-xs px-2 py-1 rounded', w.status==='online' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-700']">{{ w.status }}</span></td>
+                <td class="px-2 py-1">{{ w.orders_processed }}</td>
+                <td class="px-2 py-1">{{ w.last_seen }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-4 mt-4">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="font-semibold">Live Notifications</h2>
+        <div class="text-xs text-gray-500">SSE connected: <span :class="sseConnected ? 'text-emerald-600' : 'text-red-600'">{{ sseConnected ? 'yes' : 'no' }}</span></n>
+      </div>
+      <div class="max-h-56 overflow-auto font-mono text-xs bg-black text-emerald-400 p-3 rounded">
+        <div v-for="(n,i) in notifications" :key="i">{{ n }}</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, reactive, computed } = Vue
+    createApp({
+      data(){
+        return {
+          form: { customer_name:'Jane Doe', order_type:'takeout', table_number:10, delivery_address:'123 Main St, City', items:[{name:'Margherita Pizza', quantity:1, price:15.99},{name:'Caesar Salad', quantity:1, price:8.99}] },
+          lastOrder: '',
+          error: '',
+          busy: false,
+          queryOrder: '',
+          tracked: {},
+          currentStatus: null,
+          currentHistory: [],
+          workers: [],
+          notifications: [],
+          sseConnected: false,
+        }
+      },
+      computed: {
+        trackedList(){ return Object.values(this.tracked).sort((a,b)=>a.order_number.localeCompare(b.order_number)) },
+      },
+      methods: {
+        resetForm(){ this.form={ customer_name:'', order_type:'takeout', table_number:1, delivery_address:'', items:[{name:'',quantity:1,price:0}] } },
+        addItem(){ this.form.items.push({name:'',quantity:1,price:0}) },
+        removeItem(i){ this.form.items.splice(i,1) },
+        statusClass(s){
+          return s==='received' ? 'bg-gray-200 text-gray-700' : s==='cooking' ? 'bg-amber-100 text-amber-700' : s==='ready' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-700'
+        },
+        formatDate(ts){ return ts ? new Date(ts).toLocaleString() : '' },
+        async createOrder(){
+          try{
+            this.busy=true; this.error=''
+            const body = { customer_name:this.form.customer_name, order_type:this.form.order_type, items:this.form.items }
+            if(this.form.order_type==='dine_in') body.table_number=this.form.table_number
+            if(this.form.order_type==='delivery') body.delivery_address=this.form.delivery_address
+            const r = await fetch('/api/orders',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })
+            const j = await r.json()
+            if(!r.ok) throw new Error(j?.message || JSON.stringify(j))
+            this.lastOrder = j.order_number
+            this.addTracked(j.order_number)
+            this.fetchStatus(j.order_number)
+            this.fetchHistory(j.order_number)
+          }catch(e){ this.error = e.message || String(e) } finally { this.busy=false }
+        },
+        addTracked(on){ if(!on) return; if(!this.tracked[on]) this.tracked[on] = { order_number:on, current_status:'received', updated_at:'' } },
+        trackLast(){ if(this.lastOrder){ this.addTracked(this.lastOrder); this.fetchStatus(this.lastOrder); this.fetchHistory(this.lastOrder) } },
+        async fetchStatus(on){ if(!on) return; const r = await fetch(`/api/orders/${on}/status`); if(!r.ok) return; const j = await r.json(); this.tracked[on] = j; this.currentStatus=j },
+        async fetchHistory(on){ if(!on) return; const r = await fetch(`/api/orders/${on}/history`); if(!r.ok) return; const j = await r.json(); this.currentHistory=j },
+        async refreshWorkers(){ try{ const r = await fetch('/api/workers/status'); if(r.ok){ this.workers = await r.json() } }catch{} },
+        initSSE(){
+          try{
+            const es = new EventSource('/api/stream')
+            es.onopen = ()=>{ this.sseConnected=true }
+            es.onerror = ()=>{ this.sseConnected=false }
+            es.onmessage = (e)=>{
+              try{
+                const m = JSON.parse(e.data)
+                const on = m.order_number
+                const ns = m.new_status
+                if(on){ this.addTracked(on); if(this.tracked[on]){ this.tracked[on].current_status = ns; this.tracked[on].updated_at = m.timestamp || new Date().toISOString() } }
+                this.notifications.unshift(e.data)
+                if(this.notifications.length>200) this.notifications.pop()
+              }catch{ this.notifications.unshift(e.data) }
+            }
+          }catch{}
+        },
+      },
+      mounted(){ this.initSSE(); this.refreshWorkers(); setInterval(this.refreshWorkers, 5000) }
+    }).mount('#app')
+  </script>
+</body>
+</html>
+
+
