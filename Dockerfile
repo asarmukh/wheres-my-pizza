@@ -8,7 +8,8 @@ RUN go mod download
 COPY . .
 
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o wheres-my-pizza ./cmd/main.go
+ARG SERVICE
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o wheres-my-pizza ./cmd/${SERVICE}
 
 FROM alpine:latest
 
