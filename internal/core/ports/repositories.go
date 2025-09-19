@@ -14,3 +14,15 @@ type OrderRepo interface {
 	LogStatusChange(ctx context.Context, log *domain.OrderStatusLog) error
 	GetAndIncrementOrderCounter(ctx context.Context, date time.Time) (int, error)
 }
+
+type WorkerRepo interface {
+	RegisterWorker(ctx context.Context, name, workerType string) error
+	UpdateStatus(ctx context.Context, name, status string) error
+	IncrementOrders(ctx context.Context, name string) error
+	Heartbeat(ctx context.Context, name string) error
+}
+
+type KitchenWorker interface {
+	Start(ctx context.Context) error
+	ProcessOrder(ctx context.Context, order domain.OrderMessage) error
+}

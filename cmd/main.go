@@ -120,7 +120,36 @@ func runOrderService(ctx context.Context, cfg *config.Config, db database.Pool, 
 }
 
 func runKitchenWorker(ctx context.Context, cfg *config.Config, db database.Pool) {
-	// TODO
+	// RabbitMQ connect
+	conn, err := amqp.Dial(cfg.RabbitMQ.DSN)
+	if err != nil {
+		logger.Error("kitchen-worker", "rabbitmq_connect", "failed to connect to RabbitMQ", "startup", err)
+		os.Exit(1)
+	}
+	defer conn.Close()
+
+	ch, err := conn.Channel()
+	if err != nil {
+		logger.Error("kitchen-worker", "rabbitmq_channel", "failed to open RabbitMQ channel", "startup", err)
+		os.Exit(1)
+	}
+	defer ch.Close()
+
+	workerRepo := postgres.NewWorkerRepo(db)
+	orderRepo := postgres.NewOrderRepo(db)
+
+	args := services.WorkerArgs{
+		Name:             *workerName,
+		OrderTypes:       strings.Split(*orderTypes, ","),
+		Prefetch:         *prefetch,
+		HeartbeatSeconds: *heartbeat,
+	}
+
+	worker := services.NewKitchenWorker(orderRepo, workerRepo, ch, args)
+	if err := worker.Start(ctx); err != nil {
+		logger.Error("kitchen-worker", "worker_failed", "Worker crashed", "startup", err)
+		os.Exit(1)
+	}
 }
 
 func runTrackingService(ctx context.Context, cfg *config.Config, db database.Pool, port int) {
