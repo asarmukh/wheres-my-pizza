@@ -5,10 +5,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"wheres-my-pizza/internal/adapters/http/handlers"
+	"wheres-my-pizza/internal/adapters/storage/postgres"
 	"wheres-my-pizza/internal/config"
+	"wheres-my-pizza/internal/core/services"
 	"wheres-my-pizza/internal/database"
-	"wheres-my-pizza/internal/handler"
-	"wheres-my-pizza/internal/service"
 )
 
 func main() {
@@ -31,12 +32,13 @@ func main() {
 		log.Fatalf("unable to connect to database: %v", err)
 	}
 
-	trackingService := service.NewTrackingService(pool)
-	trackingHandler := handler.NewTrackingHandler(trackingService)
+	trackingRepo := postgres.NewTrackingRepo(pool)
+	trackingService := services.NewTrackingService(trackingRepo)
+	trackingHandler := handlers.NewTrackingHandler(trackingService)
 
-	http.HandleFunc("/orders/", trackingHandler.HandleOrderStatus)
+	http.HandleFunc("/orders/", trackingHandler.HandlerOrderStatus)
 	http.HandleFunc("/workers/", trackingHandler.HandleWorkerStatus)
 
-	log.Printf("Tracking service is running on port %s", cfg.Server.Port)
-	log.Fatal(http.ListenAndServe(cfg.Server.Port, nil))
+	log.Printf("Tracking service is running")
+	log.Fatal(http.ListenAndServe("", nil))
 }

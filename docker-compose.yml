@@ -72,6 +72,41 @@ services:
     command: ["/app/wheres-my-pizza", "--worker-name=chef_mario", "--order-types=dine_in,takeout", "--prefetch=1"]
     restart: unless-stopped
 
-volumes:
+  tracking-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: tracking-service
+    container_name: tracking-service
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      CONFIG_PATH: /app/configs/config.yaml
+    ports:
+      - "3002:3002"
+    volumes:
+      - ./configs/config.yaml:/app/configs/config.yaml
+    command: ["/app/wheres-my-pizza", "--mode=tracking-service"]
+    restart: unless-stopped
 
+  # notifier-service:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #     args:
+  #       SERVICE: notifier-service
+  #   container_name: notifier-service
+  #   depends_on:
+  #     rabbitmq:
+  #       condition: service_healthy
+  #   environment:
+  #     CONFIG_PATH: /app/configs/config.yaml
+  #   volumes:
+  #     - ./configs/config.yaml:/app/configs/config.yaml
+  #   command: ["/app/wheres-my-pizza", "--mode=notifier-service"]
+  #   restart: unless-stopped
+
+volumes:
   postgres_data:
