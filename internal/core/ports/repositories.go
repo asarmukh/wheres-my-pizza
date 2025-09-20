@@ -14,3 +14,8 @@ type OrderRepo interface {
 	LogStatusChange(ctx context.Context, log *domain.OrderStatusLog) error
 	GetAndIncrementOrderCounter(ctx context.Context, date time.Time) (int, error)
 }
+
+type TrackingRepo interface {
+	GetOrderStatus(orderID int) (*domain.Order, error)
+	GetWorkerStatus(workerID int) (*domain.Worker, error)
+}
