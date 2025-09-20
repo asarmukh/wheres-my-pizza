@@ -20,3 +20,6 @@
 
 //enter psql console 
 docker exec -it pizza-postgres psql -U restaurant_user -d restaurant_db
+
+//workers flags
+~/wheres-my-pizza/cmd/kitchen-service$ ./wheres-my-pizza --worker-name="chef_mario" --order-types="dine-in,takeout" --prefetch=1

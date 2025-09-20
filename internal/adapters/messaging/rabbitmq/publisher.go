@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 	"wheres-my-pizza/internal/core/domain"
 
@@ -39,10 +40,10 @@ func (p *RabbitMQPublisher) PublishOrder(ctx context.Context, order *domain.Orde
 		return fmt.Errorf("failed to marshal order message: %w", err)
 	}
 
-	routingKey := fmt.Sprintf("kitchen.%s.%d", order.Type, order.Priority)
+	routingKey := fmt.Sprintf("kitchen.%s.%d", strings.ReplaceAll(order.Type, "-", "_"), order.Priority)
 
 	err = p.channel.PublishWithContext(ctx,
-		p.exchange,
+		"orders_topic",
 		routingKey,
 		false,
 		false,

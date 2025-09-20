@@ -10,4 +10,9 @@ rabbitmq:
   port: 5672
   user: guest
   password: guest
-  
+
+worker_name: chef_mario
+order_types:
+  - dine_in
+  - takeout
+prefetch: 1

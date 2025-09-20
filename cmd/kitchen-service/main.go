@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	amqp "github.com/rabbitmq/amqp091-go"
+	"gopkg.in/yaml.v3"
 )
 
 /*
@@ -781,10 +782,21 @@ func loadConfig(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	var cfg Config
-	if err := json.Unmarshal(b, &cfg); err != nil {
-		return nil, err
+
+	// определяем формат по расширению файла
+	switch {
+	case strings.HasSuffix(path, ".yaml"), strings.HasSuffix(path, ".yml"):
+		if err := yaml.Unmarshal(b, &cfg); err != nil {
+			return nil, err
+		}
+	default: // по умолчанию json
+		if err := json.Unmarshal(b, &cfg); err != nil {
+			return nil, err
+		}
 	}
+
 	// default ports if missing
 	if cfg.Database.Port == 0 {
 		cfg.Database.Port = 5432
@@ -798,7 +810,7 @@ func loadConfig(path string) (*Config, error) {
 func main() {
 	// flags
 	var (
-		cfgPath           = flag.String("config", "./config.json", "path to config.json")
+		cfgPathFlag       = flag.String("config", "", "path to config file (yaml)")
 		workerName        = flag.String("worker-name", "", "unique name for worker (required)")
 		orderTypesFlag    = flag.String("order-types", "", "comma-separated order types (optional: dine_in,takeout,delivery)")
 		heartbeatInterval = flag.Int("heartbeat-interval", 30, "heartbeat interval seconds")
@@ -809,6 +821,15 @@ func main() {
 
 	if *workerName == "" {
 		fmt.Fprintln(os.Stderr, "--worker-name is required")
+		os.Exit(2)
+	}
+
+	cfgPath := os.Getenv("CONFIG_PATH") // пробуем взять из env
+	if cfgPath == "" {
+		cfgPath = *cfgPathFlag // если не задано, берём из флага
+	}
+	if cfgPath == "" {
+		fmt.Fprintln(os.Stderr, "CONFIG_PATH or --config is required")
 		os.Exit(2)
 	}
 
@@ -829,7 +850,7 @@ func main() {
 	})
 
 	// load config
-	cfg, err := loadConfig(*cfgPath)
+	cfg, err := loadConfig(cfgPath)
 	if err != nil {
 		logger.Error("config_load_failed", "Failed to load config", requestID, err, "", nil)
 		os.Exit(1)

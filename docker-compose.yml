@@ -30,6 +30,11 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   order-service:
     build:
@@ -39,10 +44,8 @@ services:
         SERVICE: order-service
     container_name: order-service
     depends_on:
-      db:
-        condition: service_healthy
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
     environment:
       CONFIG_PATH: /app/configs/config.yaml
     ports:
@@ -60,14 +63,15 @@ services:
         SERVICE: kitchen-service
     container_name: kitchen-service
     depends_on:
-      db:
-        condition: service_healthy
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
     environment:
       CONFIG_PATH: /app/configs/config.yaml
-    command: ["/app/wheres-my-pizza", "--mode=kitchen-worker", "--worker-name=chef_mario", "--order-types=dine_in,takeout", "--prefetch=1"]
+    volumes:
+      - ./configs/config.yaml:/app/configs/config.yaml
+    command: ["/app/wheres-my-pizza", "--worker-name=chef_mario", "--order-types=dine_in,takeout", "--prefetch=1"]
     restart: unless-stopped
 
 volumes:
+
   postgres_data:
