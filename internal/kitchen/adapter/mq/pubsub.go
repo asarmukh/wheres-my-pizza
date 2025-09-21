@@ -23,6 +23,7 @@ func (p *Publisher) PublishCooking(ctx context.Context, payload map[string]any) 
 	b, _ := json.Marshal(payload)
 	return p.c.PublishJSON(ctx, "notifications_fanout", "", 0, b)
 }
+
 func (p *Publisher) PublishReady(ctx context.Context, payload map[string]any) error {
 	b, _ := json.Marshal(payload)
 	return p.c.PublishJSON(ctx, "notifications_fanout", "", 0, b)

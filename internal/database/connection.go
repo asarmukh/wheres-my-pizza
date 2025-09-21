@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"time"
+
 	"wheres-my-pizza/internal/config"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -13,7 +14,7 @@ type Pool = *pgxpool.Pool
 
 var DB Pool
 
-func Connect(cfg config.DatabaseConfig) (Pool, error) {
+func Connect(cfg config.Database) (Pool, error) {
 	dsn := fmt.Sprintf(
 		"postgres://%s:%s@%s:%d/%s",
 		cfg.User,

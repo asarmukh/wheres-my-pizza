@@ -2,131 +2,255 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
-	"wheres-my-pizza/internal/adapters/http/handlers"
-	messaging "wheres-my-pizza/internal/adapters/messaging/rabbitmq"
-	"wheres-my-pizza/internal/adapters/storage/postgres"
-	"wheres-my-pizza/internal/config"
-	"wheres-my-pizza/internal/core/services"
-	"wheres-my-pizza/internal/database"
-	"wheres-my-pizza/internal/logger"
 
-	amqp "github.com/rabbitmq/amqp091-go"
+	"wheres-my-pizza/internal/config"
+	"wheres-my-pizza/internal/db"
+	"wheres-my-pizza/internal/logger"
+	"wheres-my-pizza/internal/rabbitmq"
+
+	orderhttp "wheres-my-pizza/internal/order/adapter/http"
+	ordermq "wheres-my-pizza/internal/order/adapter/mq"
+	orderrepo "wheres-my-pizza/internal/order/adapter/repo"
+	orderapp "wheres-my-pizza/internal/order/app"
+
+	kitchenmq "wheres-my-pizza/internal/kitchen/adapter/mq"
+	kitchenrepo "wheres-my-pizza/internal/kitchen/adapter/repo"
+	kitchenapp "wheres-my-pizza/internal/kitchen/app"
+
+	trackhttp "wheres-my-pizza/internal/tracking/adapter/http"
+	trackrepo "wheres-my-pizza/internal/tracking/adapter/repo"
+	trackapp "wheres-my-pizza/internal/tracking/app"
+
+	notimq "wheres-my-pizza/internal/notification/adapter/mq"
+	notiapp "wheres-my-pizza/internal/notification/app"
+
+	demo "wheres-my-pizza/internal/demo"
 )
 
 func main() {
-	mode := flag.String("mode", "", "Mode to run: order-service | kitchen-worker | tracking-service | notification-subscriber")
-	port := flag.Int("port", 3000, "HTTP port (only for services with HTTP API)")
+	mode := flag.String("mode", "", "Service mode: order-service | kitchen-worker | tracking-service | notification-subscriber")
+	port := flag.Int("port", 0, "HTTP port (for HTTP services)")
+	maxConcurrent := flag.Int("max-concurrent", 50, "Max concurrent orders to process (order-service)")
+	workerName := flag.String("worker-name", "", "Unique worker name (kitchen-worker)")
+	orderTypes := flag.String("order-types", "", "Comma-separated order types to handle (kitchen-worker)")
+	heartbeatInterval := flag.Int("heartbeat-interval", 30, "Heartbeat interval seconds (kitchen-worker)")
+	prefetch := flag.Int("prefetch", 1, "RabbitMQ prefetch (kitchen-worker)")
+	cfgPath := flag.String("config", "./configs/config.yaml", "Path to YAML config file")
 	flag.Parse()
 
 	if *mode == "" {
-		log.Fatal("You must specify --mode")
+		fmt.Fprintln(os.Stderr, "--mode is required")
+		os.Exit(2)
 	}
 
-	cfgPath := os.Getenv("CONFIG_PATH")
-	if cfgPath == "" {
-		log.Fatal("CONFIG_PATH env variable not set")
+	// Fixed config path logic
+	path := *cfgPath
+	if path == "" {
+		path = os.Getenv("CONFIG_PATH")
+	}
+	if path == "" {
+		// Use the default value from the flag definition
+		path = "./configs/config.yaml"
+		fmt.Fprintf(os.Stderr, "CONFIG_PATH not set, using default: %s\n", path)
 	}
 
-	cfg, err := config.LoadConfig(cfgPath)
-	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
-	}
+	// Use the improved config loader with fallback
+	cfg := config.LoadWithFallback(path)
 
-	reqID := logger.NewRequestID()
-	ctx := context.Background()
+	host, _ := os.Hostname()
+	log := logger.New(*mode, host)
 
-	dbStart := time.Now()
-	db, err := database.Connect(cfg.Database)
-	if err != nil {
-		logger.Error(*mode, "db_connect", "cannot connect to DB", reqID, err)
-		os.Exit(1)
-	}
-	defer db.Close()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	logger.Info("order-service", "db_connected", "Connected to PostgreSQL database", reqID, nil, time.Since(dbStart).Milliseconds())
+	// Shared DB (for services that need it)
+	var pool *db.Pool
+	var amqp *rabbitmq.Client
 
-	logger.Info("order-service", "service_started", "Order Service started", reqID, map[string]interface{}{
-		"port":           *port,
-		"max_concurrent": 50,
-	}, 0)
-
+	// Initialize per-mode resources and start service
 	switch *mode {
+	case "demo-ui":
+		if *port == 0 {
+			*port = 3005
+		}
+		pool, err := db.Connect(ctx, cfg.Database)
+		if err != nil {
+			log.Error(ctx, "db_connection_failed", "Failed to connect to database", err)
+			os.Exit(1)
+		}
+		if err := db.RunMigrations(ctx, pool); err != nil {
+			log.Error(ctx, "db_migration_failed", "Failed to run migrations", err)
+			os.Exit(1)
+		}
+		amqp = rabbitmq.NewClient(cfg.RabbitMQ, log)
+		if err := amqp.ConnectWithRetry(ctx); err != nil {
+			log.Error(ctx, "rabbitmq_connection_failed", "Failed to connect to RabbitMQ", err)
+			os.Exit(1)
+		}
+		if err := amqp.EnsureOrderTopology(ctx); err != nil {
+			log.Error(ctx, "rabbitmq_declare_failed", "Failed to declare order topology", err)
+			os.Exit(1)
+		}
+		if err := amqp.EnsureNotificationTopology(ctx); err != nil {
+			log.Error(ctx, "rabbitmq_declare_failed", "Failed to declare notification topology", err)
+			os.Exit(1)
+		}
+		h, err := demo.New(ctx, log, pool, amqp, *maxConcurrent)
+		if err != nil {
+			log.Error(ctx, "demo_failed", "Failed to init demo ui", err)
+			os.Exit(1)
+		}
+		httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", *port), Handler: h}
+		go func() {
+			log.Info(ctx, "service_started", fmt.Sprintf("Demo UI started on port %d", *port), logger.M{"port": *port})
+			if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error(ctx, "http_server_failed", "HTTP server error", err)
+				stop()
+			}
+		}()
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = httpSrv.Shutdown(shutdownCtx)
 	case "order-service":
-		runOrderService(ctx, cfg, db, *port, reqID)
+		if *port == 0 {
+			*port = 3000
+		}
+		pool, err := db.Connect(ctx, cfg.Database)
+		if err != nil {
+			log.Error(ctx, "db_connection_failed", "Failed to connect to database", err)
+			os.Exit(1)
+		}
+		log.Info(ctx, "db_connected", "Connected to PostgreSQL database", logger.M{"duration_ms": 0})
+
+		if err := db.RunMigrations(ctx, pool); err != nil {
+			log.Error(ctx, "db_migration_failed", "Failed to run migrations", err)
+			os.Exit(1)
+		}
+
+		amqp = rabbitmq.NewClient(cfg.RabbitMQ, log)
+		if err := amqp.ConnectWithRetry(ctx); err != nil {
+			log.Error(ctx, "rabbitmq_connection_failed", "Failed to connect to RabbitMQ", err)
+			os.Exit(1)
+		}
+		if err := amqp.EnsureOrderTopology(ctx); err != nil {
+			log.Error(ctx, "rabbitmq_declare_failed", "Failed to declare RabbitMQ topology", err)
+			os.Exit(1)
+		}
+		log.Info(ctx, "rabbitmq_connected", "Connected to RabbitMQ exchange 'orders_topic'", nil)
+
+		repo := orderrepo.NewPostgres(pool)
+		pub := ordermq.NewPublisher(amqp)
+		app := orderapp.NewService(repo, pub, log)
+		srv := orderhttp.NewServer(app, log, *maxConcurrent)
+		httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", *port), Handler: srv}
+		go func() {
+			log.Info(ctx, "service_started", fmt.Sprintf("Order Service started on port %d", *port), logger.M{"port": *port, "max_concurrent": *maxConcurrent})
+			if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error(ctx, "http_server_failed", "HTTP server error", err)
+				stop()
+			}
+		}()
+
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = httpSrv.Shutdown(shutdownCtx)
+
 	case "kitchen-worker":
-		runKitchenWorker(ctx, cfg, db)
+		if *workerName == "" {
+			fmt.Fprintln(os.Stderr, "--worker-name is required for kitchen-worker")
+			os.Exit(2)
+		}
+		pool, err := db.Connect(ctx, cfg.Database)
+		if err != nil {
+			log.Error(ctx, "db_connection_failed", "Failed to connect to database", err)
+			os.Exit(1)
+		}
+		if err := db.RunMigrations(ctx, pool); err != nil {
+			log.Error(ctx, "db_migration_failed", "Failed to run migrations", err)
+			os.Exit(1)
+		}
+		amqp = rabbitmq.NewClient(cfg.RabbitMQ, log)
+		if err := amqp.ConnectWithRetry(ctx); err != nil {
+			log.Error(ctx, "rabbitmq_connection_failed", "Failed to connect to RabbitMQ", err)
+			os.Exit(1)
+		}
+		if err := amqp.EnsureKitchenTopology(ctx, *orderTypes); err != nil {
+			log.Error(ctx, "rabbitmq_declare_failed", "Failed to declare RabbitMQ kitchen topology", err)
+			os.Exit(1)
+		}
+		cons := kitchenmq.NewConsumer(amqp)
+		repo := kitchenrepo.New(pool)
+		pub := kitchenmq.NewPublisher(amqp)
+		runner := kitchenapp.NewRunner(*workerName, *orderTypes, *prefetch, *heartbeatInterval, cons, repo, pub, log)
+		if err := runner.Run(ctx); err != nil {
+			// already logged inside
+			os.Exit(1)
+		}
+
 	case "tracking-service":
-		runTrackingService(ctx, cfg, db, *port)
+		if *port == 0 {
+			*port = 3002
+		}
+		pool, err := db.Connect(ctx, cfg.Database)
+		if err != nil {
+			log.Error(ctx, "db_connection_failed", "Failed to connect to database", err)
+			os.Exit(1)
+		}
+		if err := db.RunMigrations(ctx, pool); err != nil {
+			log.Error(ctx, "db_migration_failed", "Failed to run migrations", err)
+			os.Exit(1)
+		}
+		repo := trackrepo.New(pool)
+		app := trackapp.New(repo, 2*30)
+		srv := trackhttp.New(app, log)
+		httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", *port), Handler: srv}
+		go func() {
+			log.Info(ctx, "service_started", fmt.Sprintf("Tracking Service started on port %d", *port), logger.M{"port": *port})
+			if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error(ctx, "http_server_failed", "HTTP server error", err)
+				stop()
+			}
+		}()
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = httpSrv.Shutdown(shutdownCtx)
+
 	case "notification-subscriber":
-		runNotificationService(ctx)
+		amqp = rabbitmq.NewClient(cfg.RabbitMQ, log)
+		if err := amqp.ConnectWithRetry(ctx); err != nil {
+			log.Error(ctx, "rabbitmq_connection_failed", "Failed to connect to RabbitMQ", err)
+			os.Exit(1)
+		}
+		if err := amqp.EnsureNotificationTopology(ctx); err != nil {
+			log.Error(ctx, "rabbitmq_declare_failed", "Failed to declare notification topology", err)
+			os.Exit(1)
+		}
+		cons := notimq.NewConsumer(amqp)
+		sub := notiapp.New(cons, log)
+		if err := sub.Run(ctx); err != nil {
+			os.Exit(1)
+		}
+
 	default:
-		log.Fatalf("Unknown mode: %s", *mode)
-	}
-}
-
-func runOrderService(ctx context.Context, cfg *config.Config, db database.Pool, port int, reqID string) {
-	conn, err := amqp.Dial("amqp://guest:guest@rabbitmq:5672/")
-	if err != nil {
-		logger.Error("order-service", "rabbitmq_connect", "failed to connect to RabbitMQ", reqID, err)
-		os.Exit(1)
-	}
-	defer conn.Close()
-
-	ch, err := conn.Channel()
-	err = ch.ExchangeDeclare(
-		"orders_topic",
-		"topic",
-		true,
-		false,
-		false,
-		false,
-		nil,
-	)
-
-	if err != nil {
-		logger.Error("order-service", "rabbitmq_channel", "failed to open RabbitMQ channel", reqID, err)
-		os.Exit(1)
+		fmt.Fprintf(os.Stderr, "unknown --mode: %s\n", *mode)
+		os.Exit(2)
 	}
 
-	publisher := messaging.NewRabbitMQPublisher(ch, "orders_topic")
-
-	repo := postgres.NewOrderRepo(db)
-	service := services.NewOrderService(repo, publisher)
-	handler := handlers.NewOrderHandler(service)
-
-	mux := http.NewServeMux()
-	config.RegisterRoutes(mux, handler)
-
-	addr := fmt.Sprintf(":%d", port)
-	logger.Info("order-service", "http_server_started", "Starting HTTP server", reqID, map[string]interface{}{
-		"address": addr,
-	}, 0)
-
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: mux,
+	if amqp != nil {
+		amqp.Close()
 	}
-
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		logger.Error("order-service", "http_server_failed", "ListenAndServe failed", reqID, err)
-		os.Exit(1)
+	if pool != nil {
+		pool.Close()
 	}
-}
-
-func runKitchenWorker(ctx context.Context, cfg *config.Config, db database.Pool) {
-	// TODO
-}
-
-func runTrackingService(ctx context.Context, cfg *config.Config, db database.Pool, port int) {
-	// TODO
-}
-
-func runNotificationService(ctx context.Context) {
-	// TODO
 }

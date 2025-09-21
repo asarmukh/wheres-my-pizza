@@ -36,12 +36,14 @@ func (h *sseHub) subscribe() chan []byte {
 	h.mu.Unlock()
 	return ch
 }
+
 func (h *sseHub) unsubscribe(ch chan []byte) {
 	h.mu.Lock()
 	delete(h.subs, ch)
 	close(ch)
 	h.mu.Unlock()
 }
+
 func (h *sseHub) broadcast(msg []byte) {
 	h.mu.Lock()
 	for ch := range h.subs {
